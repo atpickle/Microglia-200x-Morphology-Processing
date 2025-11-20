@@ -968,3 +968,104 @@ def measure_mean_gray_value_c1(input_folder):
 
     df.to_excel(output_excel_path, index=False)
     print(f"Results saved to Excel file: {output_excel_path}")
+
+def Colorize_Composite_3Channel(folder_path, display_results=False, save_results=True):
+    """
+    Colorize specified 3-channel TIFF images and create composite images.
+
+    Parameters
+    ----------
+    folder_path : str
+        Path to the folder containing the TIFF images.
+    display_results : bool, optional
+        Whether to display the images. Default is False.
+    save_results : bool, optional
+        Whether to save the images. Default is True.
+
+    Returns
+    -------
+    None
+    """
+    import os
+    import glob
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as mcolors
+    from skimage.io import imread as load_image
+    from skimage.color import gray2rgb
+
+    # Create a new output path that includes the "Colorized" folder
+    output_path = os.path.join(folder_path, "0_Colorized")
+
+    # Create the "Colorized" folder if it doesn't exist
+    os.makedirs(output_path, exist_ok=True)
+
+    def create_colormap(color):
+        colors = ["black", color]
+        return mcolors.LinearSegmentedColormap.from_list("", colors)
+    
+    # Get a list of base file names for all TIFF images ending in _C_0
+    base_files = [os.path.splitext(os.path.basename(f))[0].rsplit('_C_0', 1)[0] for f in glob.glob(folder_path + "/*_C_0.tiff")]
+
+    # Define the colors for each channel
+    channel_colors = ["yellow", "green", "blue"]
+    rgb_colors = [(1, 1, 0), (0, 1, 0), (0, 0, 1)]  # yellow, green, blue
+
+    # Iterate through each base file name
+    for base_name in base_files:
+        channel_images = []
+        for i in range(3):  # Adjusted for 3 channels
+            channel_path = os.path.join(folder_path, f"{base_name}_C_{i}.tiff")
+            if os.path.exists(channel_path):
+                channel_image = load_image(channel_path).astype(np.float32)  # Use float32 for compatibility
+                channel_images.append(channel_image)
+            else:
+                print(f"Channel {i} not found for {base_name}")
+                break
+
+        if len(channel_images) != 3:
+            print(f"Skipping {base_name} due to missing channels")
+            continue
+
+        cmap_colors = [create_colormap(color) for color in channel_colors]
+        output_paths = []  # Create an empty list to store the output paths
+
+        for i, channel_image in enumerate(channel_images):
+            vmax = np.percentile(channel_image, 99.9)
+            vmin = np.percentile(channel_image, 0.1)
+
+            # Specify the output path with the original TIFF file name and channel number
+            channel_output_path = os.path.join(output_path, f'{base_name}_C_{i}.png')
+            
+            plt.imshow(channel_image, cmap=cmap_colors[i], vmin=vmin, vmax=vmax)
+            plt.axis(False)
+          
+            if save_results:
+                # Save the image with the specified output path
+                plt.savefig(channel_output_path, dpi=300, transparent=True, bbox_inches='tight', pad_inches=0)
+                output_paths.append(channel_output_path)
+            if display_results:
+                plt.show()
+            plt.close() 
+
+        # Create Composite Image
+        merged = np.zeros_like(gray2rgb(channel_images[0]), dtype=np.float32)
+        for i in range(3):  # Adjusted for 3 channels
+            colored_image = gray2rgb(channel_images[i]) * np.array(rgb_colors[i], dtype=np.float32)
+            merged += colored_image
+
+        # Normalize the merged image to ensure values are within the valid range
+        merged = merged / np.max(merged)
+
+        fig = plt.figure(figsize=(merged.shape[1]/100, merged.shape[0]/100))
+        plt.axis(False)
+        plt.imshow(merged)
+
+        # Save the composite image with the specified output path
+        composite_output_path = os.path.join(output_path, f'{base_name}_composite.png')
+        if save_results:
+            plt.savefig(composite_output_path, dpi=300, transparent=True, bbox_inches='tight', pad_inches=0)
+            output_paths.append(composite_output_path)
+        if display_results:
+            plt.show()
+        plt.close()
